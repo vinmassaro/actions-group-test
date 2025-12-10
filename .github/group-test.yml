@@ -1,0 +1,22 @@
+name: Group Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-groups:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run 100 groups
+        run: |
+          for i in $(seq 1 100); do
+            site="site-${i}"
+
+            echo "::group::Starting deploy for ${site}"
+            echo "Doing work for ${site}..."
+            echo "More output for ${site}"
+            sleep 0.1
+            echo "Finished ${site}"
+            echo "::endgroup::"
+
+          done
