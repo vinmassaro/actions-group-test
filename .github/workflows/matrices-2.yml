@@ -1,24 +1,25 @@
-name: Reusable Matrix Runner (inner)
+name: matrices-2
 
 on:
   workflow_call:
     inputs:
       items:
         required: true
-        type: string  # JSON string of items
+        type: string
 
 jobs:
   per-site:
+    # inner matrix: each entry is an object like {"site":"site-1"}
     strategy:
-      max-parallel: 10    # adjust concurrency to avoid overload
       fail-fast: false
+      max-parallel: 10   # tune concurrency here
       matrix: ${{ fromJson(inputs.items) }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run per-site "deploy" and print log
+      - name: Run per-site deploy (writes log & prints)
         shell: bash
         run: |
           set -euo pipefail
@@ -32,7 +33,7 @@ jobs:
           echo "Step: migrate" >> "$log"
           sleep 0.2
 
-          # simulate a failure for demo
+          # (Optional) simulate failures for demo:
           if [[ "$site" == "site-7" || "$site" == "site-23" ]]; then
             echo "Simulated error on ${site}" >&2
             echo "Simulated error on ${site}" >> "$log"
@@ -43,6 +44,7 @@ jobs:
           sleep 0.2
           echo "=== END ${site} ===" >> "$log"
 
+          # print the per-site log to this job's output
           cat "$log"
 
       - name: Upload per-site log
