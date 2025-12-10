@@ -1,0 +1,101 @@
+name: Group Parallel Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  parallel-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run parallel deploys and then print grouped logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE:-$(pwd)}"
+
+          # create 100 fake sites
+          SITES_FILE="${GITHUB_WORKSPACE:-.}/sites.txt"
+          seq 1 100 | sed 's/^/site-/' > "$SITES_FILE"
+          echo "Created $SITES_FILE with $(wc -l < "$SITES_FILE") sites."
+
+          # deploy function that writes to per-site log and per-site exit file
+          deploy_site() {
+            local site="$1"
+            local log="$GITHUB_WORKSPACE/deploy-${site}.log"
+            local exitf="$GITHUB_WORKSPACE/deploy-${site}.exit"
+
+            # everything inside block goes to the per-site log
+            {
+              echo "=== START ${site} ==="
+              echo "Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+              echo "Running step: check"
+              sleep 0.2
+              echo "Running step: migrate"
+              sleep 0.2
+
+              # Example: simulate a failure for demonstration on site-7 and site-23
+              if [[ "$site" == "site-7" || "$site" == "site-23" ]]; then
+                echo "Simulated error on ${site}" >&2
+                false
+              fi
+
+              echo "Running step: finalize"
+              sleep 0.2
+              echo "=== END ${site} ==="
+            } &> "$log"
+
+            local rc=$?
+            echo "$rc" > "$exitf"
+            return $rc
+          }
+
+          export -f deploy_site
+
+          # run in parallel (adjust -j for concurrency). Use --line-buffer to reduce weird buffering.
+          # we ignore the parallel exit code here so we can always print all logs afterwards.
+          cat "$SITES_FILE" | parallel -j 12 --will-cite --line-buffer deploy_site {} || true
+
+          # After parallel finishes, print each site's log inside a collapsible group
+          overall_rc=0
+          while IFS= read -r site || [ -n "$site" ]; do
+            site_trimmed="$(echo "$site" | tr -d '\r' | xargs)"
+            [[ -z "$site_trimmed" ]] && continue
+            log="$GITHUB_WORKSPACE/deploy-${site_trimmed}.log"
+            exitf="$GITHUB_WORKSPACE/deploy-${site_trimmed}.exit"
+
+            echo "::group::Deploy ${site_trimmed}"
+            if [ -f "$log" ]; then
+              # print the per-site log
+              cat "$log"
+            else
+              echo "No log found for ${site_trimmed}"
+            fi
+            echo "::endgroup::"
+
+            # check exit status file
+            if [ -f "$exitf" ]; then
+              rc="$(cat "$exitf" || echo 1)"
+              if [ "$rc" -ne 0 ]; then
+                echo "Site ${site_trimmed} FAILED (exit ${rc})"
+                overall_rc=1
+              fi
+            else
+              echo "No exit file for ${site_trimmed}; treating as failure"
+              overall_rc=1
+            fi
+          done < "$SITES_FILE"
+
+          # upload is a later step; fail the step now if any failed so the job shows failure
+          if [ "$overall_rc" -ne 0 ]; then
+            echo "One or more sites failed. See grouped logs above and uploaded artifacts."
+            exit 1
+          else
+            echo "All sites succeeded."
+          fi
+
+      - name: Upload per-site logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-logs
+          path: deploy-*.log
