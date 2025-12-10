@@ -1,0 +1,74 @@
+name: Matrix Extended Simple Demo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  matrix-builder:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.extend.outputs.matrix }}
+    steps:
+      - name: Generate sites.json
+        run: |
+          set -euo pipefail
+          TOTAL=300
+          echo "Generating sites.json with $TOTAL sites"
+
+          echo '{"include":[' > sites.json
+          first=true
+          for i in $(seq 1 "$TOTAL"); do
+            if [ "$first" = true ]; then
+              first=false
+            else
+              printf ',' >> sites.json
+            fi
+            printf '{"site":"site-%s"}' "$i" >> sites.json
+          done
+          echo ']}' >> sites.json
+
+          cat sites.json
+
+      - id: extend
+        name: Run matrix-extended
+        uses: cloudposse/github-action-matrix-extended@main
+        with:
+          matrix: ./sites.json
+          nested-matrices-count: "2"
+
+  run-groups:
+    needs: matrix-builder
+    strategy:
+      max-parallel: 1
+      matrix: ${{ fromJson(needs.matrix-builder.outputs.matrix).include }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print group metadata
+        run: |
+          echo "GROUP NAME:"
+          echo "${{ matrix.name }}"
+          echo ""
+          echo "RAW matrix.items:"
+          echo "${{ matrix.items }}"
+          echo ""
+
+      - name: Process sites in this group
+        run: |
+          set -euo pipefail
+
+          # Write the matrix.items string to a file
+          echo '${{ matrix.items }}' > items.json
+
+          echo "Parsed sites:"
+          jq -r '.[]?.site' items.json
+
+          echo ""
+          echo "Running fake deploy for each site..."
+          jq -r '.[]?.site' items.json | while read -r site; do
+            echo "---- Deploying $site ----"
+            echo "Step: check"
+            sleep 0.05
+            echo "Step: migrate"
+            sleep 0.05
+            echo "Step: finalize"
+          done
