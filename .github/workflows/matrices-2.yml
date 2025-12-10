@@ -9,11 +9,11 @@ on:
 
 jobs:
   per-site:
-    # inner matrix: each entry is an object like {"site":"site-1"}
+    # inner matrix: take the .include array from the JSON we receive
     strategy:
       fail-fast: false
       max-parallel: 10   # tune concurrency here
-      matrix: ${{ fromJson(inputs.items) }}
+      matrix: ${{ fromJson(inputs.items).include }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
