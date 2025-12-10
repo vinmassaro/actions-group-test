@@ -33,4 +33,4 @@ jobs:
       matrix: ${{ fromJson(needs.matrix-builder.outputs.matrix) }}
     uses: ./.github/workflows/matrix-extended-300-inner.yml
     with:
-      items: ${{ toJson(matrix.items }}   # <-- pass JSON, not string
+      items: ${{ toJson(matrix.items) }}   # <-- fixed: closing parenthesis present
