@@ -1,4 +1,4 @@
-name: Matrix Extended Demo (300 sites)
+name: matrices-1
 
 on:
   workflow_dispatch:
@@ -9,28 +9,39 @@ jobs:
     outputs:
       matrix: ${{ steps.extend.outputs.matrix }}
     steps:
-      - name: Generate 300-site matrix.json
+      - name: Generate 300-site matrix.json (bash only)
         run: |
-          # generate JSON with include array
-          echo '{"include":[' > matrix.json
+          set -euo pipefail
+          out=matrix.json
+          echo '{"include":[' > "$out"
+          first=true
           for i in $(seq 1 300); do
-            printf '{"site":"site-%d"}' "$i" >> matrix.json
-            if [ $i -lt 300 ]; then echo "," >> matrix.json; fi
+            if [ "$first" = true ]; then
+              first=false
+            else
+              printf ',' >> "$out"
+            fi
+            printf '{"site":"site-%d"}' "$i" >> "$out"
           done
-          echo "]}" >> matrix.json
-          cat matrix.json
+          echo ']}' >> "$out"
+          echo "Wrote $out:"
+          cat "$out"
 
       - id: extend
+        name: Extend matrix (cloudposse matrix-extended)
         uses: cloudposse/github-action-matrix-extended@main
         with:
           matrix: ./matrix.json
-          nested-matrices-count: '2'  # split into 2-level matrix to bypass 256 limit
+          nested-matrices-count: '2'
 
   run-matrix:
     needs: matrix-builder
+    # Control how many outer groups run in parallel. Keep small to avoid API/runners flood.
     strategy:
-      max-parallel: 1           # controls how many outer groups run at once
+      max-parallel: 1
       matrix: ${{ fromJson(needs.matrix-builder.outputs.matrix) }}
-    uses: ./.github/workflows/matrix-extended-300-inner.yml
+    # Call the reusable workflow file (local)
+    uses: ./.github/workflows/matrices-2.yml
     with:
-      items: ${{ toJson(matrix.items) }}   # <-- fixed: closing parenthesis present
+      # Pass JSON (not a quoted string). Note the balanced parentheses.
+      items: ${{ toJson(matrix.items) }}
