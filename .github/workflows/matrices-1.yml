@@ -11,33 +11,26 @@ jobs:
     steps:
       - name: Generate 300-site matrix.json
         run: |
-          python - <<'PY' > matrix.json
-          import json
-          items=[{"site":f"site-{i}"} for i in range(1,301)]
-          print(json.dumps({"include": items}))
-          PY
-          echo "Wrote matrix.json with 300 sites"
+          # generate JSON with include array
+          echo '{"include":[' > matrix.json
+          for i in $(seq 1 300); do
+            printf '{"site":"site-%d"}' "$i" >> matrix.json
+            if [ $i -lt 300 ]; then echo "," >> matrix.json; fi
+          done
+          echo "]}" >> matrix.json
+          cat matrix.json
 
-      - name: Extend matrix (matrix-extended)
-        id: extend
+      - id: extend
         uses: cloudposse/github-action-matrix-extended@main
         with:
-          # pass file path (or could pass the JSON string)
           matrix: ./matrix.json
-          # use 2 nested levels: outer groups + inner items
-          nested-matrices-count: '2'
-          # optional helpers (not required)
-          sort-by: '.[].site'
-          group-by: '.site'
-  # call the reusable workflow for each group produced by matrix-extended
-  operation:
+          nested-matrices-count: '2'  # split into 2-level matrix to bypass 256 limit
+
+  run-matrix:
     needs: matrix-builder
-    if: ${{ needs.matrix-builder.outputs.matrix != '{"include":[]}' }}
-    # Use a small parallelism so outer-level doesn't flood API; each matrix entry will be a "group"
     strategy:
-      max-parallel: 1
-      fail-fast: false
+      max-parallel: 1           # controls how many outer groups run at once
       matrix: ${{ fromJson(needs.matrix-builder.outputs.matrix) }}
-    uses: ./.github/workflows/matrices-2.yml
+    uses: ./.github/workflows/matrix-extended-300-inner.yml
     with:
-      items: ${{ matrix.items }}
+      items: ${{ toJson(matrix.items }}   # <-- pass JSON, not string
