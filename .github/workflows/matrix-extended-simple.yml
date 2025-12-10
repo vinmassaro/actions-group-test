@@ -1,4 +1,4 @@
-name: Matrix Extended Simple Demo
+name: Matrix Extended Simple Demo (fixed)
 
 on:
   workflow_dispatch:
@@ -13,8 +13,6 @@ jobs:
         run: |
           set -euo pipefail
           TOTAL=300
-          echo "Generating sites.json with $TOTAL sites"
-
           echo '{"include":[' > sites.json
           first=true
           for i in $(seq 1 "$TOTAL"); do
@@ -26,7 +24,7 @@ jobs:
             printf '{"site":"site-%s"}' "$i" >> sites.json
           done
           echo ']}' >> sites.json
-
+          echo "Generated sites.json:"
           cat sites.json
 
       - id: extend
@@ -39,36 +37,29 @@ jobs:
   run-groups:
     needs: matrix-builder
     strategy:
+      # Use the full object returned by matrix-extended (contains an "include" array)
+      matrix: ${{ fromJson(needs.matrix-builder.outputs.matrix) }}
       max-parallel: 1
-      matrix: ${{ fromJson(needs.matrix-builder.outputs.matrix).include }}
     runs-on: ubuntu-latest
     steps:
-      - name: Print group metadata
+      - name: Show group info
         run: |
-          echo "GROUP NAME:"
-          echo "${{ matrix.name }}"
-          echo ""
-          echo "RAW matrix.items:"
-          echo "${{ matrix.items }}"
-          echo ""
+          echo "matrix.name = ${{ matrix.name }}"
+          # matrix.items may be a JSON array or a JSON string; write it to a file safely.
+          echo "${{ matrix.items }}" > items.json
+          echo "items.json content:"
+          cat items.json
 
-      - name: Process sites in this group
+      - name: Parse and run demo deploys for group sites
         run: |
           set -euo pipefail
-
-          # Write the matrix.items string to a file
-          echo '${{ matrix.items }}' > items.json
-
-          echo "Parsed sites:"
-          jq -r '.[]?.site' items.json
-
-          echo ""
-          echo "Running fake deploy for each site..."
-          jq -r '.[]?.site' items.json | while read -r site; do
+          # Safely parse items.json: if it's a string -> fromjson, else use as-is.
+          # Then iterate .[].site
+          jq -r 'if type=="string" then fromjson else . end | .[]?.site' items.json | while read -r site; do
             echo "---- Deploying $site ----"
             echo "Step: check"
-            sleep 0.05
+            sleep 0.03
             echo "Step: migrate"
-            sleep 0.05
+            sleep 0.03
             echo "Step: finalize"
           done
