@@ -1,0 +1,58 @@
+name: Reusable matrix runner (inner level)
+
+on:
+  workflow_call:
+    inputs:
+      items:
+        description: "Items (JSON string) for inner matrix"
+        required: true
+        type: string
+
+jobs:
+  operation:
+    if: ${{ inputs.items != '{"include":[]}' }}
+    # inner matrix — each matrix row is one site (e.g. {"site":"site-1"})
+    strategy:
+      max-parallel: 10    # tune this so you don't flood runners / API
+      fail-fast: false
+      matrix: ${{ fromJson(inputs.items) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run per-site "deploy" and print log
+        shell: bash
+        run: |
+          set -euo pipefail
+          site="${{ matrix.site }}"
+          log="deploy-${site}.log"
+
+          echo "=== START ${site} ===" > "$log"
+          echo "Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> "$log"
+          echo "Running step: check" >> "$log"
+          sleep 0.2
+          echo "Running step: migrate" >> "$log"
+          sleep 0.2
+
+          # simulated failures (optional demo)
+          if [[ "$site" == "site-7" || "$site" == "site-23" ]]; then
+            echo "Simulated error on ${site}" >&2
+            echo "Simulated error on ${site}" >> "$log"
+            # non-zero exit will mark this job failed
+            exit 2
+          fi
+
+          echo "Running step: finalize" >> "$log"
+          sleep 0.2
+          echo "=== END ${site} ===" >> "$log"
+
+          # print log to job output (so you can read it in the UI)
+          cat "$log"
+
+      - name: Upload per-site log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-${{ matrix.site }}-log
+          path: deploy-${{ matrix.site }}.log
